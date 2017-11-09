@@ -10,7 +10,7 @@ Import-Package: org.apache.commons.logging
 Dynatrace-Plugin-Types: metric, monitor
 Ant-Version: Apache Ant 1.7.1
 Bundle-Name: com.dynatrace.diagnostics.plugin.UrlMonitor
-Bundle-Version: 6.1.0.7870
+Bundle-Version: 6.5.0.7904
 Bundle-ClassPath: .,lib/commons-httpclient-3.1.jar,lib/org.apache.comm
  ons.codec_1.3.0.v20080530-1600.jar,lib/org.apache.commons.logging_1.0
  .4.v20080605-1930.jar

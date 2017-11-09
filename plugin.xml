@@ -36,9 +36,10 @@
       <property key="httpSOAPHeader" label="Enable SOAPAction Header" type="boolean" description="Enable to send a SOAPAction HTTP header with your request. Useful if your application is returning 500 errors for valid requests." default="false" />
       <property key="soapActionHeader" label="SOAP Action Header" type="string" description="SOAP Action Header" default="http://electrocommerce.org/abc#MyMessage" multiline="false" />
       <property key="postData" label="SOAP Envelope POST Data" type="string" description="The SOAP Envelope data which will be sent with the POST request." default="&lt;?xml version=&quot;1.0&quot; encoding=&quot;utf-8&quot;?&gt;&lt;soap:Envelope xmlns:xsi=&quot;http://www.w3.org/2001/XMLSchema-instance&quot; xmlns:xsd=&quot;http://www.w3.org/2001/XMLSchema&quot; xmlns:soap=&quot;http://schemas.xmlsoap.org/soap/envelope/&quot;&gt;&lt;soap:Body&gt;&lt;Add xmlns=&quot;http://tempuri.org/&quot;&gt;&lt;intA&gt;int&lt;/intA&gt;&lt;intB&gt;int&lt;/intB&gt;&lt;/Add&gt;&lt;/soap:Body&gt;&lt;/soap:Envelope&gt;" multiline="true" />
-      <property key="SOAPSubstitutionMode" label="SOAP Envelope Substitution Mode" type="list" description="Allows for random UUID, Float, int, Double, Gaussian, and/or Long substitution into the SOAP Body.  These following tags will be searched and replaced with their commensurate random generations.  Mutliple tags can be specified within the body.&#xA;&#xA;UUID -&gt; ${=java.util.UUID.randomUUID()}&#xA;Float -&gt; ${=java.util.Random.nextFloat()}&#xA;int -&gt; ${=java.util.Random.nextInt()}&#xA;Double -&gt; ${=java.util.Random.nextDouble()}&#xA;Gaussian -&gt; ${=java.util.Random.nextGaussian()}&#xA;Long -&gt; ${=java.util.Random.nextLong()}" default="None">
+      <property key="SOAPSubstitutionMode" label="SOAP Envelope Substitution Mode" type="list" description="Allows for random UUID, Float, int, Double, Gaussian, Long and/or specific value $PASSWORD substitution, into the SOAP Body.  The following tags will be searched and replaced with their commensurate random generations.  $PASSWORD is not replaced randomly but rather by the value specified in SOAP Envelope Substitution Password.  &#xA;&#xA;Mutliple tags can be specified within the body.&#xA;&#xA;Password -&gt; $PASSWORD&#xA;UUID -&gt; ${=java.util.UUID.randomUUID()}&#xA;Float -&gt; ${=java.util.Random.nextFloat()}&#xA;int -&gt; ${=java.util.Random.nextInt()}&#xA;Double -&gt; ${=java.util.Random.nextDouble()}&#xA;Gaussian -&gt; ${=java.util.Random.nextGaussian()}&#xA;Long -&gt; ${=java.util.Random.nextLong()}" default="None">
         <list>
           <item value="None" />
+          <item value="Password Substitution" />
           <item value="Random UUID" />
           <item value="Random Float" />
           <item value="Random int" />
@@ -48,13 +49,14 @@
           <item value="All" />
         </list>
       </property>
+      <property key="substPassword" label="SOAP Envelope Substitution Password" type="password" description="Password value to substitute into the $PASSWORD variable within the SOAP Envelope." default="" />
       <property key="httpVersion" label="HTTP version" type="list" description="The version of the HTTP protocol. HTTP/1.1 is the recommended." default="1.1">
         <list>
           <item value="1.1" />
           <item value="1.0" />
         </list>
       </property>
-      <property key="userAgent" label="User-Agent" type="string" description="The user agent string identifies the HTTP client and is sent with every request." default="dynaTrace/4" multiline="false" />
+      <property key="userAgent" label="User-Agent" type="string" description="The user agent string identifies the HTTP client and is sent with every request." default="dynaTrace/6" multiline="false" />
       <property key="maxRedirects" label="Max. redirects" type="long" description="If a value of 1 or greater is specified, the SOAP Monitor will follow HTTP redirect codes (301-303, 307) to retrieve the webpage." default="0" />
       <property key="matchContent" label="Match content" type="list" description="If enabled, the specified string will be searched in the retrieved page." default="Disabled">
         <list>
@@ -86,6 +88,7 @@
           <rule key="serverAuth" value="true" />
         </visibility>
       </property>
+      <property key="preemptiveAuth" label="Enable Preemptive Authentication" type="boolean" description="If enabled, authentication is performed preemptively.  See http://hc.apache.org/httpclient-3.x/authentication.html.  " default="false" />
       <property key="useProxy" label="Proxy" type="boolean" description="If enabled, the configured HTTP proxy server will be used to access the SOAP." default="false" />
       <property key="proxyHost" label="Proxy host" type="string" description="The hostname of the HTTP proxy server." default="" multiline="false">
         <visibility>

@@ -78,6 +78,10 @@ public class SOAPMonitor implements Monitor, Migrator {
     private static final String CONFIG_PROXY_USERNAME = "proxyUsername";
     private static final String CONFIG_PROXY_PASSWORD = "proxyPassword";
     private static final String CONFIG_IGNORE_CERTIFICATE = "ignoreCertificate";
+    private static final String CONFIG_PREEMPTIVE_AUTH = "preemptiveAuth";
+    private static final String CONFIG_PWD_SUBSTITUTION = "pwdSubstitution";
+    private static final String CONFIG_PWD_SUBSTITUTION_VALUE = "substPassword";
+    
     // measure constants
     private static final String METRIC_GROUP = "SOAP Monitor";
     private static final String MSR_HOST_REACHABLE = "HostReachable";
@@ -121,6 +125,7 @@ public class SOAPMonitor implements Monitor, Migrator {
         boolean serverAuth;
         String serverUsername;
         String serverPassword;
+        boolean preemptiveAuth;
         // proxy
         boolean useProxy;
         String proxyHost;
@@ -160,6 +165,11 @@ public class SOAPMonitor implements Monitor, Migrator {
     public Status execute(MonitorEnvironment env) throws Exception {
         Status status = new Status();
 
+        log.log(Level.INFO, "Executing SOAPMonitor version 6.5.0.7904 ..." + env.getHost());
+        log.log(Level.INFO, "*******************************************************************1");
+        log.log(Level.INFO, "*******************************************************************2");
+        log.log(Level.INFO, "*******************************************************************3");
+
         //in case plug-in returns PartialSuccess the hostReachable measure will always return 0
         Collection<MonitorMeasure> hostReachableMeasures = env.getMonitorMeasures(METRIC_GROUP, MSR_HOST_REACHABLE);
         if (status.getStatusCode().getBaseCode() == Status.StatusCode.Success.getBaseCode() && hostReachableMeasures != null) {
@@ -195,6 +205,7 @@ public class SOAPMonitor implements Monitor, Migrator {
             httpMethod.setRequestHeader("SOAPAction", soapActionHeader);
         }
 
+        //httpMethod.setRequestHeader("Authorization", "Basic UE0yUFA5TTpGazhkUzRDMw==");
         if (httpMethod == null) {
             status.setMessage("Unknown HTTP method: " + config.method);
             status.setStatusCode(Status.StatusCode.ErrorInternal);
@@ -217,12 +228,29 @@ public class SOAPMonitor implements Monitor, Migrator {
         messageBuffer.append(config.url).append("\r\n");
 
         try {
-            if (log.isLoggable(Level.INFO)) {
-                log.info("Executing method: " + config.method + ", URI: " + httpMethod.getURI());
+
+            log.info("Executing method: " + config.method + ", URI: " + httpMethod.getURI());
+            if (config.serverAuth) {
+                httpMethod.setDoAuthentication(true);
+            } else {
+                httpMethod.setDoAuthentication(false);
             }
+            
 
             // connect
             time = System.nanoTime();
+            //log.info("Executing httpMethod: " + httpMethod.getQueryString());
+            //log.info("Auth model is: " + httpMethod.getHostAuthState().getAuthScheme().toString());
+            log.info("Auth on is: " + httpMethod.getDoAuthentication());
+            if (config.serverAuth) {
+                log.info("Auth user id is: " + config.serverUsername);
+                log.fine("Auth password is: " + config.serverPassword);
+            } else {
+                httpMethod.setDoAuthentication(false);
+            }
+            
+            log.info("Post body is: " + config.postData);
+            
             httpStatusCode = httpClient.executeMethod(httpMethod);
             firstResponseTime = System.nanoTime() - time;
 
@@ -237,6 +265,7 @@ public class SOAPMonitor implements Monitor, Migrator {
             }*/
 
             String responseBody = httpMethod.getResponseBodyAsString();
+            log.log(Level.INFO, "Response is: {0}", responseBody);
             if (log.isLoggable(Level.FINE)) {
                 log.log(Level.FINE, "Response is: {0}", responseBody);
             }
@@ -455,6 +484,9 @@ public class SOAPMonitor implements Monitor, Migrator {
             port = env.getConfigLong(CONFIG_HTTP_PORT).intValue();
             protocol = PROTOCOL_HTTP;
         }
+        
+        
+        config.preemptiveAuth = env.getConfigBoolean(CONFIG_PREEMPTIVE_AUTH);
         String path = fixPath(env.getConfigString(CONFIG_PATH));
         config.ignorecert = env.getConfigBoolean(CONFIG_IGNORE_CERTIFICATE);
         config.url = new URL(protocol, env.getHost().getAddress(), port, path);
@@ -462,9 +494,13 @@ public class SOAPMonitor implements Monitor, Migrator {
         config.method = "POST";
         String originalPostData = env.getConfigString(CONFIG_POST_DATA);
         String substituteMethod = env.getConfigString(CONFIG_SOAP_SUBSTITUTION);
+        String pwdValue = env.getConfigPassword(CONFIG_PWD_SUBSTITUTION_VALUE);
         String newPostData = "";
         switch (substituteMethod) {
 
+            case "Password Substitution":
+                newPostData = substitutePasswordVariable(originalPostData, pwdValue);
+                break;
             case "Random UUID":
                 newPostData = addRandomUUIDs(originalPostData);
                 break;
@@ -487,9 +523,13 @@ public class SOAPMonitor implements Monitor, Migrator {
             case "Random Long":
                 newPostData = addRandomLongs(originalPostData);
                 break;
+                
+            case "None":
+                config.postData = originalPostData;
 
             case "All":
-                newPostData = addRandomUUIDs(originalPostData);
+                newPostData = substitutePasswordVariable(originalPostData, pwdValue);
+                newPostData = addRandomUUIDs(newPostData);
                 newPostData = addRandomFloats(newPostData);
                 newPostData = addRandomInts(newPostData);
                 newPostData = addRandomDoubles(newPostData);
@@ -498,7 +538,11 @@ public class SOAPMonitor implements Monitor, Migrator {
                 break;
 
         }
+        
+        
         config.postData = newPostData;
+        log.info("Post body after substitutions if applicable " + config.postData);
+        
         config.contentType = env.getConfigString(CONFIG_CONTENT_TYPE);
         config.characterSet = env.getConfigString(CONFIG_CHARACTER_SET);
         config.httpVersion = env.getConfigString(CONFIG_HTTP_VERSION);
@@ -559,11 +603,7 @@ public class SOAPMonitor implements Monitor, Migrator {
         }
 
         HttpMethodBase httpMethod = null;
-        if ("GET".equals(config.method)) {
-            httpMethod = new GetMethod(url);
-        } else if ("HEAD".equals(config.method)) {
-            httpMethod = new HeadMethod(url);
-        } else if ("POST".equals(config.method)) {
+        
             httpMethod = new PostMethod(url);
             // set the POST data
             if (config.postData != null && config.postData.length() > 0) {
@@ -571,11 +611,10 @@ public class SOAPMonitor implements Monitor, Migrator {
                     //StringRequestEntity requestEntity = new StringRequestEntity(config.postData, "application/soap+xml", "UTF-8");
                     StringRequestEntity requestEntity = new StringRequestEntity(config.postData, config.contentType, config.characterSet);
                     ((PostMethod) httpMethod).setRequestEntity(requestEntity);
-                    if (log.isLoggable(Level.FINE)) {
-                        log.info("request url is " + httpMethod.getPath());
-                        log.info("requestEntity content is " + requestEntity.getContent());
-                        log.info("requestEntity content type is " + requestEntity.getContentType());
-                    }
+
+                    log.fine("request url is " + httpMethod.getPath());
+                    log.fine("requestEntity content is " + requestEntity.getContent());
+                    log.fine("requestEntity content type is " + requestEntity.getContentType());
 
                 } catch (UnsupportedEncodingException uee) {
                     if (log.isLoggable(Level.WARNING)) {
@@ -583,7 +622,7 @@ public class SOAPMonitor implements Monitor, Migrator {
                     }
                 }
             }
-        }
+        
         return httpMethod;
     }
 
@@ -609,8 +648,13 @@ public class SOAPMonitor implements Monitor, Migrator {
                 Protocol protocol = Protocol.getProtocol(uri.getScheme());
                 port = protocol.getDefaultPort();
             }
-//			UsernamePasswordCredentials credentials = new UsernamePasswordCredentials(config.serverUsername, config.serverPassword);
-            NTCredentials credentials = new NTCredentials(config.serverUsername, config.serverPassword, host, host);
+            
+            if (config.preemptiveAuth) {
+                httpClient.getParams().setAuthenticationPreemptive(true);
+            }
+            
+            UsernamePasswordCredentials credentials = new UsernamePasswordCredentials(config.serverUsername, config.serverPassword);
+            //NTCredentials credentials = new NTCredentials(config.serverUsername, config.serverPassword, host, host);
             httpClient.getState().setCredentials(new AuthScope(host, port, AuthScope.ANY_REALM), credentials);
         }
 
@@ -673,7 +717,7 @@ public class SOAPMonitor implements Monitor, Migrator {
             }
         }
     }
-
+    
     public String addRandomUUIDs(String originalPostData) {
         int i = 0;
         String uuidCheck = "\\$\\{\\=java\\.util\\.UUID\\.randomUUID\\(\\)\\}";
@@ -691,15 +735,11 @@ public class SOAPMonitor implements Monitor, Migrator {
         return originalPostData;
 
     }
-    
-    public String addRandomFloats(String originalPostData) {
+
+    public String substitutePasswordVariable(String originalPostData, String pwdValue) {
         int i = 0;
-        String floatCheck = "\\$\\{\\=java\\.util\\.Random\\.nextFloat\\(\\)}";
-        Random floatRandom = new Random();
-        Float myFloat = floatRandom.nextFloat();
-        
-        Pattern p = Pattern.compile(floatCheck);
-        
+        String passwordCheck = "\\$PASSWORD";
+        Pattern p = Pattern.compile(passwordCheck);
         Matcher m = p.matcher(originalPostData);
         while (m.find()) {
             i++;
@@ -707,104 +747,125 @@ public class SOAPMonitor implements Monitor, Migrator {
 
         for (int j = 1; j <= i; j++) {
             
+            originalPostData = originalPostData.replaceFirst(passwordCheck, pwdValue);
+        }
+        log.log(Level.FINE, "postData now is " + originalPostData);
+        return originalPostData;
+
+    }
+
+    public String addRandomFloats(String originalPostData) {
+        int i = 0;
+        String floatCheck = "\\$\\{\\=java\\.util\\.Random\\.nextFloat\\(\\)}";
+        Random floatRandom = new Random();
+        Float myFloat = floatRandom.nextFloat();
+
+        Pattern p = Pattern.compile(floatCheck);
+
+        Matcher m = p.matcher(originalPostData);
+        while (m.find()) {
+            i++;
+        }
+
+        for (int j = 1; j <= i; j++) {
+
             originalPostData = originalPostData.replaceFirst(floatCheck, myFloat.toString());
         }
         log.log(Level.FINE, "postData now is " + originalPostData);
         return originalPostData;
 
     }
-    
+
     public String addRandomInts(String originalPostData) {
         int i = 0;
         String intCheck = "\\$\\{\\=java\\.util\\.Random\\.nextInt\\(\\)}";
-        
+
         Random intRandom = new Random();
         int myInt = intRandom.nextInt();
-        
+
         Pattern p = Pattern.compile(intCheck);
-        
+
         Matcher m = p.matcher(originalPostData);
         while (m.find()) {
             i++;
         }
 
         for (int j = 1; j <= i; j++) {
-            
+
             originalPostData = originalPostData.replaceFirst(intCheck, new Integer(myInt).toString());
         }
         log.log(Level.FINE, "postData now is " + originalPostData);
         return originalPostData;
 
     }
-    
+
     public String addRandomDoubles(String originalPostData) {
         int i = 0;
         String doubleCheck = "\\$\\{\\=java\\.util\\.Random\\.nextDouble\\(\\)}";
-        
+
         Random doubleRandom = new Random();
         Double myDouble = doubleRandom.nextDouble();
-        
+
         Pattern p = Pattern.compile(doubleCheck);
-        
+
         Matcher m = p.matcher(originalPostData);
         while (m.find()) {
             i++;
         }
 
         for (int j = 1; j <= i; j++) {
-            
+
             originalPostData = originalPostData.replaceFirst(doubleCheck, myDouble.toString());
         }
         log.log(Level.FINE, "postData now is " + originalPostData);
         return originalPostData;
 
     }
-    
+
     public String addRandomGaussians(String originalPostData) {
         int i = 0;
         String gaussianCheck = "\\$\\{\\=java\\.util\\.Random\\.nextGaussian\\(\\)}";
-        
+
         Random gaussianRandom = new Random();
         Double myDouble = gaussianRandom.nextGaussian();
-        
+
         Pattern p = Pattern.compile(gaussianCheck);
-        
+
         Matcher m = p.matcher(originalPostData);
         while (m.find()) {
             i++;
         }
 
         for (int j = 1; j <= i; j++) {
-            
+
             originalPostData = originalPostData.replaceFirst(gaussianCheck, myDouble.toString());
         }
         log.log(Level.FINE, "postData now is " + originalPostData);
         return originalPostData;
 
     }
-    
+
     public String addRandomLongs(String originalPostData) {
         int i = 0;
         String longCheck = "\\$\\{\\=java\\.util\\.Random\\.nextLong\\(\\)}";
-        
+
         Random longRandom = new Random();
         Long myLong = longRandom.nextLong();
-        
+
         Pattern p = Pattern.compile(longCheck);
-        
+
         Matcher m = p.matcher(originalPostData);
         while (m.find()) {
             i++;
         }
 
         for (int j = 1; j <= i; j++) {
-            
+
             originalPostData = originalPostData.replaceFirst(longCheck, myLong.toString());
         }
         log.log(Level.FINE, "postData now is " + originalPostData);
         return originalPostData;
 
     }
-    
-    
+
 }
